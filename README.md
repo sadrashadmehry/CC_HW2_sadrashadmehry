@@ -84,3 +84,52 @@ The first main run (45672149476) passed lint, test, build, push and tag. Its Pag
 ### Pages artifact discovery follow-up
 
 The newer Pages actions also failed in run 45680559513: the upload finalized artifact 15055105432, and the run artifact API lists github-pages, but the deployment client's immediate discovery did not find it. Action upgrades alone were not sufficient. Page rendering and upload now happen in the build job; pages only configures and deploys after its build/tag dependencies complete. This follows GitHub's documented separate build/deploy pattern and avoids immediate same-job upload/discovery. The exact backend cause is not proven. actionlint passes; a new main run is required to verify deployment.
+
+## Section 6.2 — manual Pages rollback
+
+The manual workflow is .github/workflows/deploy.yml, named Deploy a selected Pages version. It runs only on workflow_dispatch with a required tag. prepare checks out refs/tags/<input> explicitly, verifies HEAD matches that tag, renders the selected checkout's page with the input tag, and uploads its Pages artifact. A missing tag fails; it never falls back to main. deploy waits for prepare, then uses the same configure/deploy action versions as CI.
+
+The branch dropdown selects the workflow definition; choose main. The tag input selects the site source. This distinction lets the current workflow publish a historical checkout, including its original sentence, without any new source commit or tag. The rollback changes only Pages; it does not move Git tags or change GHCR latest.
+
+First successful release (verified run 45685760491, all six jobs passed):
+
+```text
+v2026-11-25-623b30b1293c0a0f881563bd4838582b5c723421
+```
+
+Its original sentence is:
+
+> این صفحه برای تمرین رایانش ابری آماده شده است.
+
+The current source sentence was changed once for the second release:
+
+> نسخهٔ دوم صفحه منتشر شد؛ این جمله برای آزمایش بازگشت به نسخهٔ قبلی تغییر کرده است.
+
+### Publish version two
+
+From the repo root, commit/push the implementation yourself on ci-setup, open a new PR to main and merge after checks pass:
+
+```powershell
+git add .github/workflows/deploy.yml part2/site/index.html part2/tests/test_publication.py README.md REPORT_NOTES_FA.md part2/README.md
+git diff --cached --stat
+git commit -m "Add manual Pages rollback and second-version sentence"
+git push -u origin ci-setup
+```
+
+Wait for all six main CI jobs to finish, then open the public page and hard-refresh. Capture fig12-b-new-version.png with its new version and changed sentence.
+
+### Restore the first release, without another commit
+
+1. Actions → Deploy a selected Pages version → Run workflow.
+2. Branch: main. Tag: paste the full first-successful-release tag above.
+3. Capture fig12-c-rollback-input.png showing the input, then click Run workflow.
+4. Wait for prepare and deploy to pass. Capture fig12-d-manual-run.png; the run title includes the selected tag, and prepare logs show its source commit.
+5. Open the same Pages URL, hard-refresh and capture fig12-e-restored-page.png. Both the old version and the old sentence must return. The URL stays unchanged.
+
+workflow_dispatch requires the workflow to exist on the default branch, so Run workflow appears only after merging this implementation to main. Wait for automatic publication to finish before requesting rollback.
+
+### Concurrency and validation
+
+Both automatic pages and manual deploy jobs share concurrency group github-pages with cancel-in-progress false. This serializes active deployments, not the earlier build/prepare jobs, and does not give manual rollback permanent priority. GitHub may replace older pending jobs; the last successful deployment determines what the one Pages URL serves. A later main publication can replace the rolled-back site. Run rollback after automatic publication has completed for the demonstration.
+
+Local validation: actionlint accepts both workflows; 33 tests pass, including a historical-source fixture proving rollback restores the old sentence rather than only relabeling the current page. One initial Windows concurrency test run encountered a transient file-replacement PermissionError; the full fresh-directory rerun passed. No runtime app behavior was changed in this section. The manual GitHub run and public restored page remain pending user execution.
