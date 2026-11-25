@@ -76,3 +76,7 @@ git fetch --tags
 ```
 
 Workflow execution, GHCR publication and Pages deployment are not verified until the user pushes and supplies the Actions results. Section 6.2 (manual rollback workflow) is next; it is not implemented yet.
+
+### Pages action compatibility
+
+The first main run (45672149476) passed lint, test, build, push and tag. Its Pages upload succeeded and github-pages was present in the run artifacts, but the deploy action failed to discover it. The Pages actions have been updated together to configure-pages v6, upload-pages-artifact v5 (using upload-artifact v7 internally), and deploy-pages v5. This also replaces the old Node 20 actions. A new commit/run is needed; rerunning the old commit uses its old workflow. The updated workflow passes actionlint; remote deployment remains pending.

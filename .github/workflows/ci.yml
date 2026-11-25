@@ -157,10 +157,10 @@ jobs:
         env:
           VERSION: ${{ needs.build.outputs.version }}
         run: python part2/tools/render_site.py "$VERSION" "$RUNNER_TEMP/site"
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v4
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: ${{ runner.temp }}/site
       - name: Deploy static page
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
