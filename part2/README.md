@@ -1,8 +1,8 @@
 # Part 2 — lab queue
 
 Runtime: Python 3.12, standard library only. The supplied tests are unchanged.
-Local verification used Python 3.13 on Windows: 24 passed (13 supplied + 11 extra).
-Docker runtime verification remains pending user capture.
+Current verification: 26 tests passed on Python 3.13 / Windows, including process contention. Linux Python 3.12 fcntl was also checked with three processes, 200 joins and 200 takes on an isolated temporary queue.
+Three-replica HTTP verification of the locked version remains pending user capture.
 
 ## Tests
 
@@ -54,7 +54,7 @@ Expected health: HTTP 200, body exactly ok, Content-Length 2. This is a standalo
 - UTF-8 plain text responses include byte-accurate Content-Length.
 - PORT defaults 8000; DATA_DIR defaults /data. main binds 0.0.0.0; serve honors its host argument.
 - Local queue file paths are supplied by the caller. Removal writes a same-directory temporary file and replaces the queue only when writing succeeds.
-- shortcut: no shared process lock yet; add the shared lock and record the three-replica race before/after in section 5.3. Do not use this version for multiple replicas.
+- Queue operations now hold a per-call shared lock on a stable queue.txt.lock file. Linux uses fcntl.flock; Windows local tests use stdlib msvcrt byte locking. The lock is released by closing its independent handle, including on exceptions. Do not delete/replace the lock file while services run.
 
 For manual testing, import postman/lab-queue.postman_collection.json into Postman; baseUrl defaults to http://localhost:8000. The static site in site/index.html is separate from the API and keeps __VERSION__ in Git.
 
@@ -65,7 +65,7 @@ docker stop cc-queue-51
 docker rm cc-queue-51
 ```
 
-Section 5.2 is complete per user confirmation. Current configuration is the unlocked section 5.3 baseline below: three app replicas behind proxy. Earlier section 5.2 commands document the earlier single-instance stage. Locking and CI/Pages are not implemented yet.
+Section 5.2 is complete per user confirmation. Current configuration is the locked section 5.3 implementation: three app replicas behind proxy. The unlocked baseline is preserved in commit e0518aa and documented historically below. Earlier section 5.2 commands document the earlier single-instance stage. The locked implementation is complete; follow the after-fix commands below. CI/Pages are not implemented yet.
 
 
 ## Section 5.2 — Compose and persistence
@@ -141,7 +141,7 @@ Save a supplementary rebuild screenshot, and check /data/queue.txt still contain
 Save captures in ../screenshots/mine. Keep .env out of Git. To stop the service while keeping its data, use docker compose down (without -v).
 
 
-## Section 5.3 — unlocked baseline (capture before the lock fix)
+## Section 5.3 — historical unlocked baseline (commit e0518aa)
 
 The app service no longer publishes a host port or has a fixed container_name. Only Nginx publishes APP_PORT. All replicas share queue-data at /data. nginx.conf is mounted read-only. Nginx resolves app through Compose DNS at startup; a name resolving to three IPs becomes three upstream peers. Start app replicas first, then start/reload proxy after they exist. Reload after replacing/scaling app replicas. proxy_next_upstream off prevents replaying a mutating request against another upstream on a proxy error. Access logs include upstream addresses.
 
@@ -172,7 +172,7 @@ docker compose -p cc-hw2-race up -d --scale app=3 proxy
 docker compose -p cc-hw2-race exec proxy nginx -t
 docker compose -p cc-hw2-race exec proxy nginx -s reload
 docker compose -p cc-hw2-race ps
-curl.exe -i http://localhost:8000/health
+curl.exe -i http://127.0.0.1:8000/health
 docker compose -p cc-hw2-race exec --index 1 app python -c "from pathlib import Path; p=Path('/data/queue.txt'); print(repr(p.read_text(encoding='utf-8')) if p.exists() else 'empty: no queue file yet')"
 ```
 
@@ -182,7 +182,7 @@ Do not use down -v. The old single-instance project must release APP_PORT before
 
 ```powershell
 whoami
-python tools/concurrent_join.py --url http://localhost:8000 --drain
+python tools/concurrent_join.py --url http://127.0.0.1:8000 --drain
 ```
 
 Capture fig14-a-unlocked.png: successful count, duplicate/missing tickets, drained names and passed. A false result caused by duplicate tickets demonstrates the queue race. Connection/timeout errors alone do not establish a race; inspect health/proxy configuration first. If passed is true, inspect that the queue is empty and run again. Do not retry individual timed-out join/next calls; reset the separate test queue before repeating a faulty batch.
@@ -197,4 +197,76 @@ docker compose -p cc-hw2-race logs --tail 35 proxy
 
 Capture fig14-b-three-backends.png with three replica IPs and matching upstream addresses in actual access logs. Merely listing three containers does not prove load balancing. Use more log lines if needed.
 
-Stop here and send the baseline output and commit SHA. Codex will then add shared file locking, remove the deliberate pause, add concurrent next checks, and repeat the same test on an empty queue. Do not present this unlocked stage as the completed 5.3 solution.
+The user captured this baseline at commit e0518aa: 200 successful requests, duplicate and missing tickets, no request errors, 200 names recovered, and final 404 empty. The implementation below now includes locking and removes the pause. These historical commands document the before-fix experiment, not the current source state.
+
+### Windows localhost delay and interrupted batches
+
+Measured on this host: Python urllib health GET took 2.078 seconds via localhost and 0.007 seconds via 127.0.0.1. The proxy binds IPv4 localhost only. Use http://127.0.0.1:8000 for both before/after race batches; this avoids repeated localhost address fallback delays. The supplied tool prints its JSON report only after the batch and optional sequential drain complete; silence before the report is expected. No retries or changes to request count/workers were added.
+
+After an interrupted batch, stop the replicas before clearing only the disposable race project's queue:
+
+```powershell
+docker compose -p cc-hw2-race stop app
+docker compose -p cc-hw2-race run --rm --no-deps app python -c "from pathlib import Path; Path('/data/queue.txt').write_text('', encoding='utf-8'); print('Race test queue reset')"
+docker compose -p cc-hw2-race up -d --scale app=3 app
+docker compose -p cc-hw2-race exec proxy nginx -s reload
+curl.exe --max-time 5 -i http://127.0.0.1:8000/health
+python tools/concurrent_join.py --url http://127.0.0.1:8000 --drain
+```
+
+The reset deliberately removes leftover experimental names from cc-hw2-race_queue-data, not the original part2_queue-data volume. Ensure the previous client process has stopped first. If requests time out again, collect proxy/app logs before another run rather than treating network failures as a race result.
+
+
+## Section 5.3 — locked version (current)
+
+join and take both lock the stable separate queue.txt.lock for the entire operation, including count and os.replace. Each call opens a new handle, so even threads do not share a lock descriptor. The artificial 10 ms pause is removed. Windows tests use msvcrt because native Windows has no fcntl; the actual Linux containers use fcntl.flock(LOCK_EX). The original supplied tests and concurrent_join tool are unchanged.
+
+Verified locally: 26 pytest cases pass. A separate Linux Python 3.12 container with three processes produced tickets 1..200 exactly once and removed every seeded name exactly once, finished empty, and successfully reused the lock after an empty-queue exception. This check did not touch the Compose volumes. The user's full HTTP before/after captures are separate evidence.
+
+### Rebuild all three apps and refresh proxy DNS
+
+Save the before-fix screenshots before clearing terminal scrollback.
+
+```powershell
+whoami
+docker compose -p cc-hw2-race stop proxy
+docker compose -p cc-hw2-race up -d --build --scale app=3 app
+docker compose -p cc-hw2-race up -d --scale app=3 proxy
+docker compose -p cc-hw2-race exec proxy nginx -s reload
+docker compose -p cc-hw2-race ps
+curl.exe --max-time 5 -i http://127.0.0.1:8000/health
+docker compose -p cc-hw2-race exec --index 1 app python -c "from pathlib import Path; p=Path('/data/queue.txt'); print(repr(p.read_text(encoding='utf-8')) if p.exists() else 'empty')"
+```
+
+The successful earlier --drain ended with 404 empty, so the queue should be empty. If it is not, reset only the disposable project using the interrupted-batch procedure above. Do not clear the original part2_queue-data volume.
+
+### Repeat the same join experiment — fig14-c
+
+```powershell
+whoami
+python tools/concurrent_join.py --url http://127.0.0.1:8000 --drain
+```
+
+Expected: sent=successful=taken=200; duplicate_tickets={}; missing_tickets=[]; unexpected_tickets=[]; errors=[]; missing_names=[]; extra_names=[]; final_next=404 empty; passed=true.
+
+### Concurrent next — fig14-d
+
+The preceding --drain left the test queue empty. Seed it once without draining, then run the new next checker:
+
+```powershell
+whoami
+python tools/concurrent_join.py --url http://127.0.0.1:8000
+python tools/concurrent_next.py --url http://127.0.0.1:8000
+```
+
+Stop if the seeding command does not pass. Do not seed twice. The next checker expects exactly student-000 through student-199 from the supplied seed tool; it checks names as a multiset, never retries mutations, and requires final 404 empty. Expected successful=200, no duplicate/missing/extra names, errors=[], passed=true. HTTP response order across concurrent clients need not match FIFO processing order; the supplied sequential tests verify FIFO.
+
+### Confirm all three upstreams
+
+```powershell
+docker inspect $(docker compose -p cc-hw2-race ps -q app) --format '{{.Name}} {{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'
+docker compose -p cc-hw2-race logs --tail 35 proxy
+```
+
+Capture three distinct matching upstream IPs. Save screenshots in ../screenshots/mine. Commit the final lock fix yourself after verifying; record both the baseline e0518aa and the final fix commit in the report.
+

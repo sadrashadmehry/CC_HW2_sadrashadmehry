@@ -46,5 +46,6 @@ def test_replace_failure_preserves_queue_and_cleans_temp(tmp_path, monkeypatch):
     with pytest.raises(OSError):
         queue.take(path)
     assert path.read_text(encoding="utf-8") == "Ali\nSara\n"
-    assert list(tmp_path.iterdir()) == [path]
+    assert set(tmp_path.iterdir()) == {path, path.with_name(path.name + ".lock")}
+
 
