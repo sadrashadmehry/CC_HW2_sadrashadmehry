@@ -80,3 +80,7 @@ Workflow execution, GHCR publication and Pages deployment are not verified until
 ### Pages action compatibility
 
 The first main run (45672149476) passed lint, test, build, push and tag. Its Pages upload succeeded and github-pages was present in the run artifacts, but the deploy action failed to discover it. The Pages actions have been updated together to configure-pages v6, upload-pages-artifact v5 (using upload-artifact v7 internally), and deploy-pages v5. This also replaces the old Node 20 actions. A new commit/run is needed; rerunning the old commit uses its old workflow. The updated workflow passes actionlint; remote deployment remains pending.
+
+### Pages artifact discovery follow-up
+
+The newer Pages actions also failed in run 45680559513: the upload finalized artifact 15055105432, and the run artifact API lists github-pages, but the deployment client's immediate discovery did not find it. Action upgrades alone were not sufficient. Page rendering and upload now happen in the build job; pages only configures and deploys after its build/tag dependencies complete. This follows GitHub's documented separate build/deploy pattern and avoids immediate same-job upload/discovery. The exact backend cause is not proven. actionlint passes; a new main run is required to verify deployment.
