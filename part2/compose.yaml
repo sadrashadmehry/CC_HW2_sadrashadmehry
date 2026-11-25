@@ -1,0 +1,19 @@
+services:
+  app:
+    build: .
+    environment:
+      PORT: "8000"
+      DATA_DIR: /data
+    volumes:
+      - queue-data:/data
+  proxy:
+    image: nginx:alpine
+    depends_on:
+      - app
+    ports:
+      - "127.0.0.1:${APP_PORT:?Set APP_PORT in .env}:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+volumes:
+  queue-data:
