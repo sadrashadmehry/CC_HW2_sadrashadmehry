@@ -1,8 +1,8 @@
 # Part 2 — lab queue
 
 Runtime: Python 3.12, standard library only. The supplied tests are unchanged.
-Current verification: 26 tests passed on Python 3.13 / Windows, including process contention. Linux Python 3.12 fcntl was also checked with three processes, 200 joins and 200 takes on an isolated temporary queue.
-Three-replica HTTP verification of the locked version remains pending user capture.
+Current verification: 32 tests passed on Python 3.13 / Windows, including process contention. Linux Python 3.12 fcntl was also checked with three processes, 200 joins and 200 takes on an isolated temporary queue.
+The user has completed the 5.3 capture/commit steps. Before-lock commit: e0518aa; after-lock commit: 6120f97. See the root README for the consolidated references.
 
 ## Tests
 
@@ -28,7 +28,7 @@ whoami
 & ..\..\repo\part2\.venv\Scripts\python.exe -m pytest -q --tb=line --basetemp=..\..\repo\part2\.venv\pytest-starter-capture
 ```
 
-Expected original starter: 12 failed, 1 passed. Expected repo implementation: 24 passed.
+Expected original starter: 12 failed, 1 passed. Expected current repo implementation: 32 passed.
 Save native screenshots as tests-before.png and tests-after.png under repo/screenshots/mine.
 Raw agent runs are saved outside the repo in hw02/evidence/part2-before.txt and part2-after.txt.
 
@@ -65,7 +65,7 @@ docker stop cc-queue-51
 docker rm cc-queue-51
 ```
 
-Section 5.2 is complete per user confirmation. Current configuration is the locked section 5.3 implementation: three app replicas behind proxy. The unlocked baseline is preserved in commit e0518aa and documented historically below. Earlier section 5.2 commands document the earlier single-instance stage. The locked implementation is complete; follow the after-fix commands below. CI/Pages are not implemented yet.
+Section 5.2 is complete per user confirmation. Current configuration is the locked section 5.3 implementation: three app replicas behind proxy. The unlocked baseline is preserved in commit e0518aa and documented historically below. Earlier section 5.2 commands document the earlier single-instance stage. The locked implementation is complete; follow the after-fix commands below. Section 6.1 CI/Pages is implemented in ../.github/workflows/ci.yml; see ../README.md for GitHub setup and captures. Remote execution is pending.
 
 
 ## Section 5.2 — Compose and persistence
@@ -268,5 +268,4 @@ docker inspect $(docker compose -p cc-hw2-race ps -q app) --format '{{.Name}} {{
 docker compose -p cc-hw2-race logs --tail 35 proxy
 ```
 
-Capture three distinct matching upstream IPs. Save screenshots in ../screenshots/mine. Commit the final lock fix yourself after verifying; record both the baseline e0518aa and the final fix commit in the report.
-
+Capture three distinct matching upstream IPs. Save screenshots in ../screenshots/mine. Commit references: baseline e0518aa; lock fix 6120f97. Both are recorded in the root README and report.
