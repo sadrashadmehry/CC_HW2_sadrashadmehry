@@ -269,3 +269,7 @@ docker compose -p cc-hw2-race logs --tail 35 proxy
 ```
 
 Capture three distinct matching upstream IPs. Save screenshots in ../screenshots/mine. Commit references: baseline e0518aa; lock fix 6120f97. Both are recorded in the root README and report.
+
+## Section 6.2
+
+See ../README.md for the manual Pages workflow, verified first release tag, and second-release/rollback screenshot steps. The site sentence is now the second-version sentence; __VERSION__ remains unchanged in Git. Current local suite: 33 tests passed.
